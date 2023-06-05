@@ -50,10 +50,11 @@ class CIFAR10Enhanced(CIFAR10):
         for target in self.targets:
             if self.target_transform is not None:
                 target = self.target_transform(target)
-            self.target_transformed.append(target)
+            self.target_transformed.append(torch.tensor(target))
 
         self.data_transformed = torch.stack(self.data_transformed)
-        self.target_transformed = torch.stack(self.target_transformed, dtype=torch.int64)
+        self.target_transformed = torch.stack(self.target_transformed)
+        # self.target_transformed = torch.stack(self.target_transformed, dtype=torch.int64)
 
         if device is not None:
             self.data_transformed = self.data_transformed.to(device)
