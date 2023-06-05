@@ -39,10 +39,11 @@ class Sampling:
         self.seed = seed
 
         self.partition = None
-        self.set_length = None
+        self.set_length = int(len(self.train_data)/self.num_class)
         self.sample_data = [[] for _ in range(num_class)]
         self.classes = np.arange(self.num_class)
         self.target = None
+        self.dataset = []
 
         self._initialize()
 
@@ -52,92 +53,69 @@ class Sampling:
         elif self.method == 'random':  # TODO: Need to consider the relationship with BATCH_SIZE
             self.partition = np.random.random(self.num_client)
             self.partition /= np.sum(self.partition)
+        for i in range(self.num_class):
+            tmp_data = []
+            for j in range(len(self.train_data)):
+                if self.train_data.targets[j] == self.classes[i]:
+                    tmp_data.append(self.train_data[j])
+            self.dataset.append(tmp_data)
 
-        for i in range(len(self.train_data)):
-            for j in range(self.num_class):
-                # print(len(self.sample_data[j]))
-                if self.train_data.targets[i] == j:
-                    self.sample_data[j].append(self.train_data[i])
-        self.set_length = len(self.sample_data[0])
-
-    # def DL_sampling(self):
-    #     Sampled_data = [[] for _ in range(self.num_client)]
-    #     num_samples = int(len(self.train_data)/self.num_client)
-    #     samples = np.arange(len(self.train_data), dtype=int)
-    #     samples = np.split(samples, self.num_client)
-    #     # print(samples)
-    #     for i in range(self.num_client):
-    #         for j in range(num_samples):
-    #             Sampled_data[i].append(self.train_data[samples[i][j]])
-    #     return Sampled_data
-    #
-    # def DL_sampling(self):
-    #     np.random.seed(seed=self.seed)
-    #     Sampled_data = [[] for _ in range(self.num_client)]
-    #     num_samples = (self.set_length * self.partition).astype(int)
-    #     for i in range(self.num_client):
-    #         for j in range(self.num_class):
-    #             np.random.shuffle(self.sample_data[j])
-    #             Sampled_data[i] += self.sample_data[j][num_samples[i] * i:num_samples[i] * (i+1)]
-    #     # np.random.shuffle(Sampled_data)
-    #     return Sampled_data
-
-    def DL_sampling(self):
-        Sampled_data = []
-        target = np.arange(self.num_client)
-        target %= self.num_class
-        np.random.shuffle(target)
-        self.target = target
+    def DL_sampling_single(self):
+        np.random.seed(self.seed)
+        Sampled_data = [[] for _ in range(self.num_client)]
+        self.target = np.arange(self.num_client)
+        self.target %= self.num_class
+        np.random.shuffle(self.target)
         for i in range(self.num_client):
-            Sampled_data.append(self.sample_data[target[i]])
+            for j in range(len(self.train_data)):
+                if self.train_data.targets[j] == self.target[i]:
+                    Sampled_data[i].append(self.train_data[j])
         return Sampled_data
 
-    # def DL_sampling(self):
-    #     Sampled_data = [[] for _ in range(self.num_client)]
-    #     sample = np.arange(self.num_client, dtype=int)
-    #     sample %= self.num_class
-    #     self.target = [[] for _ in range(self.num_client)]
-    #     np.random.seed(self.seed)
-    #     np.random.shuffle(sample)
-    #     sample_1 = copy.deepcopy(sample)
-    #     np.random.shuffle(sample_1)
-    #     for i in range(self.num_client):
-    #         self.target[i].append(sample[i])
-    #         self.target[i].append(sample_1[i])
-    #     for n in range(self.num_client):
-    #         for j in range(len(self.train_data)):
-    #             if self.train_data.targets[j] in self.target[n]:
-    #                 Sampled_data[n].append(self.train_data[j])
-    #         np.random.shuffle(Sampled_data[n])
-    #     return Sampled_data
+    def Complete_Random(self):
+        np.random.seed(self.seed)
+        Sampled_data = [[] for _ in range(self.num_client)]
+        indices = np.arange(len(self.train_data), dtype=int)
+        np.random.shuffle(indices)
+        k = int(len(self.train_data)/self.num_client)
+        for i in range(self.num_client):
+            client_indices = indices[i*k: (i+1)*k]
+            for index in client_indices:
+                Sampled_data[i].append(self.train_data[index])
+        return Sampled_data
 
-    # def CL_sampling(self):  #TODO: Not complete
-    #     num_clients = self.num_client
-    #     np.random.seed(self.seed)
-    #
-    #     org_set = np.arange(self.num_class, dtype=int)
-    #     samples = np.array([], dtype=int)
-    #     while num_clients > 0:
-    #         np.random.shuffle(self.classes)
-    #         if num_clients <= self.num_class:
-    #             sample = self.classes[:num_clients]
-    #         else:
-    #             sample = self.classes
-    #         samples = np.append(samples, sample, axis=0)
-    #         num_clients -= self.num_class
-    #
-    #     data = [[] for _ in range(self.num_client)]
-    #     for i in range(len(self.train_data)):
-    #         for j in range(self.num_client):
-    #             if self.train_data.targets[i] == samples[j]:
-    #                 data[j].append(self.train_data[i])
-    #     return data
+    def Synthesize_sampling(self, alpha):
+        Alpha = [alpha for i in range(self.num_class)]
+        # Generate samples from the Dirichlet distribution
+        samples = np.random.dirichlet(Alpha, size=self.num_client)
+        # Print the generated samples
+        num_samples = []
+        for sample in samples:
+            sample = np.array(sample) * len(self.dataset[0])
+            num_samples.append([int(round(i, 0)) for i in sample])
+        Sample_data = [[] for i in range(self.num_client)]
+        for client in range(self.num_client):
+            for i in range(self.num_class):
+                class_samples = num_samples[client][i]
+                tmp_data = random.sample(self.dataset[i], k=class_samples)
+                Sample_data[client] += tmp_data
+            np.random.shuffle(Sample_data[client])
+        return Sample_data
 
-def average_weights(weights):
-    for i in range(len(weights)):
-        if i == 0:
-            total = weights[i]
+# def average_weights(weights):
+#     for i in range(len(weights)):
+#         if i == 0:
+#             total = weights[i]
+#         else:
+#             total += weights[i]
+#     total = torch.div(total, torch.tensor(len(weights)))
+#     return total
+
+def Check_Matrix(client, matrix):
+    count = 0
+    for i in range(client):
+        if np.count_nonzero(matrix[i] - matrix.transpose()[i]) == 0:
+            pass
         else:
-            total += weights[i]
-    total = torch.div(total, torch.tensor(len(weights)))
-    return total
+            count += 1
+    return count
