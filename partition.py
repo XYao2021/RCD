@@ -34,6 +34,3 @@ class Fixed_Participation:
     def get_q(self, iter):
         mean_cost = 0.5
         return min(1.0, self.avg_comp_cost / mean_cost)
-
-
-# print(Participation(node=1, average_comp_cost=0.25, V=0.1, W=1, method='Lyapunov').get_Lyapunov_q(10))

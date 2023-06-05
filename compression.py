@@ -67,12 +67,10 @@ class Lyapunov_compression(Compression):
             j = full_size
         drift_plus_penalty = self.V * torch.sum(bt_sq_sort[j:]) + \
                              self.queue * (communication_cost(self.node, iter, full_size, j) - self.avg_comm_cost)
-        # print(self.node, drift_plus_penalty, no_transmit_penalty)
         if drift_plus_penalty < no_transmit_penalty:
             trans_bits = j
         else:
             trans_bits = 0
-        # print(iter, self.node, trans_bits, cost_delta)
         self.queue += communication_cost(self.node, iter, full_size, trans_bits) - self.avg_comm_cost
         self.queue = max(0.001, self.queue)  # Not allow to have the negative queues, set to very small one
         return bt_sq_sort_indices[:trans_bits], bt_sq_sort_indices[trans_bits:]
@@ -80,7 +78,6 @@ class Lyapunov_compression(Compression):
 class Fixed_Compression(Compression):
     def __init__(self, node, avg_comm_cost, ratio=1.0):
         super().__init__(node)
-        # self.node = node
         self.avg_comm_cost = avg_comm_cost
         self.ratio = ratio
 
@@ -129,7 +126,7 @@ class Normal_Compression(abc.ABC):
     def _get_trans_indices(self, w_tmp):
         raise NotImplementedError()  #TODO: What does this mean?
 
-class Normal_compression(Normal_Compression):
+class Top_k(Normal_Compression):
     def __init__(self, node, ratio=1.0):
         super().__init__(node)
         self.ratio = ratio
@@ -143,3 +140,17 @@ class Normal_compression(Normal_Compression):
         if k > torch.count_nonzero(bt_square).item():
             k = torch.count_nonzero(bt_square).item()
         return bt_sorted_indices[:k], bt_sorted_indices[k:]
+
+class Rand_k(Normal_Compression):
+    def __init__(self, node, ratio=1.0):
+        super().__init__(node)
+        self.ratio = ratio
+
+    def _get_trans_indices(self, w_tmp):
+        np.random.seed()
+        full_size = w_tmp.size()[0]
+        all_indices = np.arange(full_size, dtype=int)
+        send_indices = np.random.choice(all_indices, int(full_size*self.ratio), replace=False)
+        # print(self.node, send_indices)
+        not_send_indices = np.setdiff1d(all_indices, send_indices)
+        return send_indices, not_send_indices

@@ -12,10 +12,10 @@ parse.add_argument('-method', type=str, default='Lyapunov', help='model method')
 
 parse.add_argument('-agg', type=int, default=1000, help='Global Aggregation times/ total iterations')
 parse.add_argument('-iter_round', type=int, default=1, help='Local Training Times: Iterations')
-parse.add_argument('-acc_point', type=int, default=20, help='Accuracy check point')
+parse.add_argument('-acc_point', type=int, default=1, help='Accuracy check point')
 
-parse.add_argument('-lr', type=float, default=0.1, help='Learning Rate of the Model')
-parse.add_argument('-bs', type=int, default=32, help='Batch Size for model')
+parse.add_argument('-lr', type=float, default=0.05, help='Learning Rate of the Model')
+parse.add_argument('-bs', type=int, default=16, help='Batch Size for model')
 parse.add_argument('-bs_test', type=int, default=128, help='Batch Size for test model')
 parse.add_argument('-cn', type=int, default=10, help='Client Number')
 parse.add_argument('-nn', type=int, default=10, help='Number of Neighbors')
@@ -25,9 +25,12 @@ parse.add_argument('-W', type=float, default=1.0, help='Lyapunov W value, initia
 parse.add_argument('-avg_comm', type=float, default=0.01, help='Average communication cost')
 parse.add_argument('-avg_comp', type=float, default=0.25, help='Average computation cost')
 
-parse.add_argument('-seed', type=int, default=11, help='random seed for pseudo random model initial weights')
+parse.add_argument('-seed', type=int, default=3, help='random seed for pseudo random model initial weights')
 parse.add_argument('-ns', type=int, default=2, help='Number of seeds for simulation')
-parse.add_argument('-ratio', type=float, default=0.01, help='the ratio of non-zero elements that the baseline want to transfer')
+parse.add_argument('-ratio', type=float, default=0.1, help='the ratio of non-zero elements that the baseline want to transfer')
+parse.add_argument('-algorithm', type=str, default='FlexDFL', help='machine learning algorithm')
+parse.add_argument('-dist', type=str, default='Dirichlet', help='Data Distribution Method')
+parse.add_argument('-alpha', type=str, default=0.5, help='Alpha value for Dirichlet Distribution')
 
 parse.add_argument('-consensus', type=float, default=0.01, help='Consensus step for CHOCO')
 
@@ -48,19 +51,12 @@ dataset_path = os.path.join(os.path.dirname(__file__), 'data')
 if args.data == 'fashion':
     model_name = 'FashionMNIST'
     dataset = 'FashionMNIST'
-#     train_data = datasets.FashionMNIST(root='data', train=True, transform=transforms.ToTensor(), target_transform=None, download=True)
-#     test_data = datasets.FashionMNIST(root='data', train=False, transform=transforms.ToTensor(), target_transform=None, download=True)
 elif args.data == 'CIFAR10':
     model_name = 'CIFAR10Model'
     dataset = 'CIFAR10'
-#     train_data = datasets.CIFAR10(root='data', train=True, transform=transforms.ToTensor(), target_transform=None, download=True)
-#     test_data = datasets.CIFAR10(datasets.CIFAR10(root='data', train=False, transform=transforms.ToTensor(), target_transform=None, download=True))
 else:
     raise Exception('Unknown dataset, need to update')
 
-AGGREGATION = args.agg  # This time aggregation equal to total iteration for 1-SGD
-BATCH_SIZE = args.bs
-BATCH_SIZE_TEST = args.bs_test
 if args.pretrained_model != '':
     load_model_file = args.pretrained_model
 else:
@@ -73,14 +69,17 @@ else:
     data_transform = None
 
 Seed_number = args.ns
-# if Seed_number < 10:
-#     raise Exception('At least 10 different seeds for test')
 Seed_up = args.seed
-
 Seed_set = [i for i in range(Seed_up-Seed_number, Seed_up)]
+
+AGGREGATION = args.agg  # This time aggregation equal to total iteration for 1-SGD
+BATCH_SIZE = args.bs
+BATCH_SIZE_TEST = args.bs_test
 CLIENTS = args.cn
 NEIGHBORS = args.nn
 METHOD = args.method
 ROUND_ITER = args.iter_round
 CHECK = args.acc_point
-# print('SEED SET: ', Seed_set)
+ALGORITHM = args.algorithm
+ALPHA = args.alpha
+DISTRIBUTION = args.dist
