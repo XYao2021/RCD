@@ -102,14 +102,14 @@ class Sampling:
             np.random.shuffle(Sample_data[client])
         return Sample_data
 
-# def average_weights(weights):
-#     for i in range(len(weights)):
-#         if i == 0:
-#             total = weights[i]
-#         else:
-#             total += weights[i]
-#     total = torch.div(total, torch.tensor(len(weights)))
-#     return total
+def average_weights(weights):
+    for i in range(len(weights)):
+        if i == 0:
+            total = weights[i]
+        else:
+            total += weights[i]
+    total = torch.div(total, torch.tensor(len(weights)))
+    return total
 
 def Check_Matrix(client, matrix):
     count = 0
