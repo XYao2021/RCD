@@ -12,15 +12,21 @@ from dataset.dataset import *
 from trans_matrix import *
 import time
 from datetime import date
+import os
 
 
 if device != 'cpu':
+    print(torch.cuda.current_device())
     torch.cuda.set_device(device)
 
 if __name__ == "__main__":  #TODO: Why use this sentence
     ACC = []
     LOSS = []
     COMM = []
+    B_max = []
+    E_max = []
+    G_max = []
+
     for seed in Seed_set:
         random.seed(seed)
         np.random.seed(seed)
@@ -76,12 +82,17 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         iter_num = 0
         total_comm_num = 0
 
+        b_max = []
+        e_max = []
+        g_max = []
+
         while True:  # TODO: What is the difference with for loop over clients
             print('SEED ', '|', seed, '|', 'ITERATION ', iter_num)
             Total_Update = []
             Update = []
+
             for n in range(CLIENTS):
-                qt = client_partition[n].get_q(iter_num)
+                qt, comp_cost = client_partition[n].get_q(iter_num)
                 if np.random.binomial(1, qt) == 1:
                     Models[n].assign_weights(weights=client_weights[n])
                     Models[n].model.train()
@@ -103,8 +114,12 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                 else:
                     Vector_update = None
 
-                Vector_update, client_residual[n] = client_compressor[n].get_trans_bits_and_residual(iter=iter_num, w_tmp=Vector_update, w_residual=client_residual[n])
+                Vector_update, client_residual[n], Bt, E, G = client_compressor[n].get_trans_bits_and_residual(iter=iter_num, w_tmp=Vector_update, w_residual=client_residual[n])
                 total_comm_num += torch.count_nonzero(Vector_update)
+
+                b_max.append(Bt)
+                e_max.append(E)
+                g_max.append(G)
 
                 Vector_update += client_weights[n]
                 Total_Update.append(Vector_update)
@@ -131,6 +146,9 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                 ACC += Test_acc
                 LOSS += global_loss
                 COMM.append(total_comm_num)
+                B_max.append(max(b_max))
+                E_max.append(max(e_max))
+                G_max.append(max(g_max))
                 break
 
         del Models
@@ -139,6 +157,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
 
         torch.cuda.empty_cache()  # Clean the memory cache
 
+    # txt_list = [ACC, '\n', LOSS, '\n', COMP_COST, '\n', COMM_COST]
     txt_list = [ACC, '\n', LOSS]
     f = open('PRO_L|{}|{}|{}|{}|{}|{}.txt'.format(ROUND_ITER, CLIENTS, NEIGHBORS, ALPHA, date.today(), time.strftime("%H:%M:%S", time.localtime())), 'w')
 
@@ -149,3 +168,11 @@ if __name__ == "__main__":  #TODO: Why use this sentence
     comm_portion = (sum(COMM)/len(COMM))/(AGGREGATION*CLIENTS)
     print('The average communication cost for baseline is ', comm_portion, COMM)
     # whole length of weights: 39760
+    Bm = sum(B_max)/len(Seed_set)
+    Em = sum(E_max) / len(Seed_set)
+    Gm = sum(G_max) / len(Seed_set)
+
+    print(Bm, Em + (LEARNING_RATE**2)*Gm, Em, Gm)
+
+    # for repeat_time in range(3):
+    #     os.system('say "Program Finished."')

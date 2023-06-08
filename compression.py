@@ -28,16 +28,20 @@ class Compression(abc.ABC):
 
     def get_trans_bits_and_residual(self, iter, w_tmp, w_residual):  # w_tmp is gradient this time
         if w_tmp is None:
+            G = 0
             w_tmp = w_residual  # w_residual is e_t
         else:
+            G = torch.sum(torch.square(w_tmp))
             w_tmp += w_residual
 
-        trans_indices, not_trans_indices = self._get_trans_indices(iter, w_tmp)
+        trans_indices, not_trans_indices, Bt = self._get_trans_indices(iter, w_tmp)
 
         w_tmp_residual = copy.deepcopy(w_tmp)
         w_tmp[not_trans_indices] = 0  # transfer vector v_t, sparse vector
         w_tmp_residual -= w_tmp  # accumulate the residual for not transmit bits
-        return w_tmp, w_tmp_residual
+
+        E = torch.sum(torch.square(w_tmp_residual))
+        return w_tmp, w_tmp_residual, Bt, E, G
 
     def _get_trans_indices(self, iter, w_tmp):
         raise NotImplementedError()  #TODO: What does this mean?
@@ -53,6 +57,7 @@ class Lyapunov_compression(Compression):
         # full_size = w_tmp.size()[0]
         full_size = w_tmp.shape[0]
         bt_square = torch.square(w_tmp)
+        Bt = torch.sum(bt_square)
         bt_sq_sort, bt_sq_sort_indices = torch.sort(bt_square, descending=True)
 
         no_transmit_penalty = self.V * torch.sum(bt_square) - self.queue * self.avg_comm_cost
@@ -73,7 +78,7 @@ class Lyapunov_compression(Compression):
             trans_bits = 0
         self.queue += communication_cost(self.node, iter, full_size, trans_bits) - self.avg_comm_cost
         self.queue = max(0.001, self.queue)  # Not allow to have the negative queues, set to very small one
-        return bt_sq_sort_indices[:trans_bits], bt_sq_sort_indices[trans_bits:]
+        return bt_sq_sort_indices[:trans_bits], bt_sq_sort_indices[trans_bits:], Bt
 
 class Fixed_Compression(Compression):
     def __init__(self, node, avg_comm_cost, ratio=1.0):
@@ -104,7 +109,7 @@ class Fixed_Compression(Compression):
             trans_bits = k
         else:
             trans_bits = 0
-        return bt_sorted_indices[:trans_bits], bt_sorted_indices[trans_bits:]
+        return bt_sorted_indices[:trans_bits], bt_sorted_indices[trans_bits:], communication_cost(self.node, iter, full_size, trans_bits)
 
 class Normal_Compression(abc.ABC):
     def __init__(self, node):
