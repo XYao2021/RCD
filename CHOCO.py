@@ -13,12 +13,12 @@ from trans_matrix import *
 
 
 if device != 'cpu':
-    torch.cuda.set_device(device)
+    current_device = torch.cuda.current_device()
+    torch.cuda.set_device(current_device)
 
 if __name__ == "__main__":  #TODO: Why use this sentence
     ACC = []
     LOSS = []
-    Updates = 0
     for seed in Seed_set:
         random.seed(seed)
         np.random.seed(seed)
@@ -29,13 +29,14 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         train_loader = DataLoader(train_data, batch_size=BATCH_SIZE_TEST, shuffle=True, num_workers=0)
         test_loader = DataLoader(test_data, batch_size=BATCH_SIZE_TEST, shuffle=False, num_workers=0)
 
-        # print(len(train_data), len(test_data))
-
         #TODO: Change the sampling and splitting method to class to accelerate the set-up process
-
-        # client_data = Sampling(num_class=len(train_data.classes), num_client=CLIENTS, train_data=train_data, method='uniform', seed=seed).Complete_Random()
-        # client_data = Sampling(num_class=len(train_data.classes), num_client=CLIENTS, train_data=train_data, method='uniform', seed=seed).DL_sampling_single()
-        client_data = Sampling(num_class=len(train_data.classes), num_client=CLIENTS, train_data=train_data, method='uniform', seed=seed).Synthesize_sampling(alpha=ALPHA)
+        Sample = Sampling(num_client=CLIENTS, num_class=len(train_data.classes), train_data=train_data, method='uniform', seed=seed)
+        if DISTRIBUTION == 'Dirichlet':
+            client_data = Sample.Synthesize_sampling(alpha=ALPHA)
+        elif DISTRIBUTION == 'Single':
+            client_data = Sample.DL_sampling_single()
+        else:
+            raise Exception('This data distribution method has not been embedded')
 
         client_train_loader = []
         client_compressor = []
@@ -66,7 +67,10 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             client_weights.append(model.get_weights())
             client_accumulate.append(torch.zeros_like(model.get_weights()))
             client_residual.append(torch.zeros_like(model.get_weights()))
-            client_compressor.append(Fixed_Compression(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
+
+            # client_compressor.append(Fixed_Compression(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
+            client_compressor.append(Quantization(num_bits=4))
+
             client_train_loader.append(DataLoader(client_data[n], batch_size=BATCH_SIZE, shuffle=True))
             client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
 
@@ -80,26 +84,37 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                 model.assign_weights(weights=client_weights[n])
                 model.model.train()
 
-                qt = client_partition[n].get_q(iter_num)
-                if np.random.binomial(1, qt) == 1:
-                    update_times += 1
-                    for i in range(ROUND_ITER):
-                        images, labels = next(iter(client_train_loader[n]))
-                        images, labels = images.to(device), labels.to(device)
-                        if data_transform is not None:
-                            images = data_transform(images)
+                # qt = client_partition[n].get_q(iter_num)
+                # if np.random.binomial(1, qt) == 1:
+                #     for i in range(ROUND_ITER):
+                #         images, labels = next(iter(client_train_loader[n]))
+                #         images, labels = images.to(device), labels.to(device)
+                #         if data_transform is not None:
+                #             images = data_transform(images)
+                #
+                #         Models[n].optimizer.zero_grad()
+                #         pred = Models[n].model(images)
+                #         loss = Models[n].loss_function(pred, labels)
+                #         loss.backward()
+                #         Models[n].optimizer.step()
+                # else:
+                #     pass
+                for i in range(ROUND_ITER):
+                    images, labels = next(iter(client_train_loader[n]))
+                    images, labels = images.to(device), labels.to(device)
+                    if data_transform is not None:
+                        images = data_transform(images)
 
-                        Models[n].optimizer.zero_grad()
-                        pred = Models[n].model(images)
-                        loss = Models[n].loss_function(pred, labels)
-                        loss.backward()
-                        Models[n].optimizer.step()
-                else:
-                    pass
+                    Models[n].optimizer.zero_grad()
+                    pred = Models[n].model(images)
+                    loss = Models[n].loss_function(pred, labels)
+                    loss.backward()
+                    Models[n].optimizer.step()
 
                 client_tmp[n] = Models[n].get_weights()
                 Vector_update = client_tmp[n] - client_accumulate[n]
 
+                # Vector_update, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=Vector_update, w_residual=client_residual[n], iter=iter_num)
                 Vector_update, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=Vector_update, w_residual=client_residual[n], iter=iter_num)
                 client_accumulate[n] += Vector_update
 
@@ -124,7 +139,6 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             if iter_num >= AGGREGATION:
                 ACC += Test_acc
                 LOSS += global_loss
-                Updates += update_times
 
                 break
 
@@ -139,5 +153,3 @@ if __name__ == "__main__":  #TODO: Why use this sentence
 
     for item in txt_list:
         f.write("%s\n" % item)
-
-    print('Total Average Update times: ', Updates/len(Seed_set))

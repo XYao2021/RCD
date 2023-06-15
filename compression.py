@@ -159,3 +159,17 @@ class Rand_k(Normal_Compression):
         # print(self.node, send_indices)
         not_send_indices = np.setdiff1d(all_indices, send_indices)
         return send_indices, not_send_indices
+
+class Quantization(abc.ABC):
+    def __init__(self, num_bits=4):
+        self.num_bits = num_bits
+        self.scale = 2**self.num_bits - 1
+
+    def get_trans_bits_and_residual(self, iter, w_tmp, w_residual):
+        if w_tmp is None:
+            w_tmp = w_residual  # w_residual is e_t
+        else:
+            w_tmp += w_residual
+        w_tmp_quantized = torch.round(w_tmp * self.scale) / self.scale
+        w_residual = w_tmp - w_tmp_quantized
+        return w_tmp_quantized, w_residual
