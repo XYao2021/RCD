@@ -16,16 +16,13 @@ import os
 
 
 if device != 'cpu':
-    print(torch.cuda.current_device())
-    torch.cuda.set_device(device)
+    current_device = torch.cuda.current_device()
+    torch.cuda.set_device(current_device)
 
 if __name__ == "__main__":  #TODO: Why use this sentence
     ACC = []
     LOSS = []
     COMM = []
-    B_max = []
-    E_max = []
-    G_max = []
 
     for seed in Seed_set:
         random.seed(seed)
@@ -51,7 +48,6 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         client_compressor = []
         Models = []
         client_weights = []
-        client_partition = []
 
         for n in range(CLIENTS):
             model = Model(random_seed=seed, learning_rate=LEARNING_RATE, model_name=model_name, device=device, flatten_weight=True, pretrained_model_file=load_model_file)
@@ -59,12 +55,10 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             client_weights.append(model.get_weights())
             client_train_loader.append(DataLoader(client_data[n], batch_size=BATCH_SIZE, shuffle=True))
             client_residual.append(torch.zeros_like(model.get_weights()).to(device))
-            if METHOD == 'Lyapunov':
-                client_compressor.append(Lyapunov_compression(node=n, avg_comm_cost=average_comm_cost, V=V, W=W))
-                client_partition.append(Lyapunov_Participation(node=n, average_comp_cost=average_comp_cost, V=V, W=W))
-            elif METHOD == 'Fixed':
-                client_compressor.append(Fixed_Compression(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
-                client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
+
+            # client_compressor.append(Top_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
+            # client_compressor.append(Rand_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
+            client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
 
         Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='random')
         check = Check_Matrix(CLIENTS, Transfer.matrix)
@@ -82,44 +76,31 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         iter_num = 0
         total_comm_num = 0
 
-        b_max = []
-        e_max = []
-        g_max = []
-
         while True:  # TODO: What is the difference with for loop over clients
             print('SEED ', '|', seed, '|', 'ITERATION ', iter_num)
             Total_Update = []
             Update = []
 
             for n in range(CLIENTS):
-                qt, comp_cost = client_partition[n].get_q(iter_num)
-                if np.random.binomial(1, qt) == 1:
-                    Models[n].assign_weights(weights=client_weights[n])
-                    Models[n].model.train()
+                Models[n].assign_weights(weights=client_weights[n])
+                Models[n].model.train()
 
-                    for local_iter in range(ROUND_ITER):
-                        images, labels = next(iter(client_train_loader[n]))
-                        images, labels = images.to(device), labels.to(device)
-                        if data_transform is not None:
-                            images = data_transform(images)
+                for local_iter in range(ROUND_ITER):
+                    images, labels = next(iter(client_train_loader[n]))
+                    images, labels = images.to(device), labels.to(device)
+                    if data_transform is not None:
+                        images = data_transform(images)
 
-                        Models[n].optimizer.zero_grad()
-                        pred = Models[n].model(images)
-                        loss = Models[n].loss_function(pred, labels)
-                        loss.backward()
-                        Models[n].optimizer.step()
+                    Models[n].optimizer.zero_grad()
+                    pred = Models[n].model(images)
+                    loss = Models[n].loss_function(pred, labels)
+                    loss.backward()
+                    Models[n].optimizer.step()
 
                     Vector_update = Models[n].get_weights()
                     Vector_update -= client_weights[n]
-                else:
-                    Vector_update = None
 
-                Vector_update, client_residual[n], Bt, E, G = client_compressor[n].get_trans_bits_and_residual(iter=iter_num, w_tmp=Vector_update, w_residual=client_residual[n])
-                total_comm_num += torch.count_nonzero(Vector_update)
-
-                b_max.append(Bt)
-                e_max.append(E)
-                g_max.append(G)
+                Vector_update, client_residual[n] = client_compressor[n].get_trans_bits_and_residual(iter=iter_num, w_tmp=Vector_update, w_residual=client_residual[n])
 
                 Vector_update += client_weights[n]
                 Total_Update.append(Vector_update)
@@ -146,9 +127,6 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                 ACC += Test_acc
                 LOSS += global_loss
                 COMM.append(total_comm_num)
-                B_max.append(max(b_max))
-                E_max.append(max(e_max))
-                G_max.append(max(g_max))
                 break
 
         del Models
@@ -159,20 +137,15 @@ if __name__ == "__main__":  #TODO: Why use this sentence
 
     # txt_list = [ACC, '\n', LOSS, '\n', COMP_COST, '\n', COMM_COST]
     txt_list = [ACC, '\n', LOSS]
-    f = open('PRO_L|{}|{}|{}|{}|{}|{}.txt'.format(ROUND_ITER, CLIENTS, NEIGHBORS, ALPHA, date.today(), time.strftime("%H:%M:%S", time.localtime())), 'w')
+    f = open('RCD|{}|{}|{}|{}|{}|{}.txt'.format(ROUND_ITER, CLIENTS, NEIGHBORS, ALPHA, date.today(), time.strftime("%H:%M:%S", time.localtime())), 'w')
 
     # f = open('PRO_{}_{}.txt'.format(RATIO, ROUND_ITER), 'w')
     for item in txt_list:
         f.write("%s\n" % item)
-
-    comm_portion = (sum(COMM)/len(COMM))/(AGGREGATION*CLIENTS)
-    print('The average communication cost for baseline is ', comm_portion, COMM)
     # whole length of weights: 39760
-    Bm = sum(B_max)/len(Seed_set)
-    Em = sum(E_max) / len(Seed_set)
-    Gm = sum(G_max) / len(Seed_set)
-
-    print(Bm, Em + (LEARNING_RATE**2)*Gm, Em, Gm)
 
     # for repeat_time in range(3):
     #     os.system('say "Program Finished."')
+    #  tensor(8.9569, device='cuda:0') tensor(6.7312, device='cuda:0')
+
+    # Residual Compensation Decentralized SGD (RCD-SGD)
