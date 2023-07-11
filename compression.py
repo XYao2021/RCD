@@ -28,24 +28,23 @@ class Compression(abc.ABC):
 
     def get_trans_bits_and_residual(self, iter, w_tmp, w_residual):  # w_tmp is gradient this time
         if w_tmp is None:
-            G = 0
             w_tmp = w_residual  # w_residual is e_t
         else:
-            G = torch.sum(torch.square(w_tmp))
             w_tmp += w_residual
 
-        trans_indices, not_trans_indices, Bt = self._get_trans_indices(iter, w_tmp)
+        trans_indices, not_trans_indices = self._get_trans_indices(iter, w_tmp)
 
         w_tmp_residual = copy.deepcopy(w_tmp)
         w_tmp[not_trans_indices] = 0  # transfer vector v_t, sparse vector
         w_tmp_residual -= w_tmp  # accumulate the residual for not transmit bits
 
         E = torch.sum(torch.square(w_tmp_residual))
-        return w_tmp, w_tmp_residual, Bt, E, G
+        return w_tmp, w_tmp_residual
 
     def _get_trans_indices(self, iter, w_tmp):
         raise NotImplementedError()  #TODO: What does this mean?
 
+# "Chose Different Compression Method"
 class Lyapunov_compression(Compression):
     def __init__(self, node, avg_comm_cost, V, W):
         super().__init__(node)
@@ -78,7 +77,7 @@ class Lyapunov_compression(Compression):
             trans_bits = 0
         self.queue += communication_cost(self.node, iter, full_size, trans_bits) - self.avg_comm_cost
         self.queue = max(0.001, self.queue)  # Not allow to have the negative queues, set to very small one
-        return bt_sq_sort_indices[:trans_bits], bt_sq_sort_indices[trans_bits:], Bt
+        return bt_sq_sort_indices[:trans_bits], bt_sq_sort_indices[trans_bits:]
 
 class Fixed_Compression(Compression):
     def __init__(self, node, avg_comm_cost, ratio=1.0):
@@ -109,49 +108,26 @@ class Fixed_Compression(Compression):
             trans_bits = k
         else:
             trans_bits = 0
-        return bt_sorted_indices[:trans_bits], bt_sorted_indices[trans_bits:], communication_cost(self.node, iter, full_size, trans_bits)
+        return bt_sorted_indices[:trans_bits], bt_sorted_indices[trans_bits:]
 
-class Normal_Compression(abc.ABC):
-    def __init__(self, node):
-        self.node = node
-
-    def get_trans_bits_and_residual(self, w_tmp, w_residual):  # w_tmp is gradient this time
-        if w_tmp is None:
-            w_tmp = w_residual  # w_residual is e_t
-        else:
-            w_tmp += w_residual
-
-        trans_indices, not_trans_indices = self._get_trans_indices(w_tmp)
-
-        w_tmp_residual = copy.deepcopy(w_tmp)
-        w_tmp[not_trans_indices] = 0  # transfer vector v_t, sparse vector
-        w_tmp_residual -= w_tmp  # accumulate the residual for not transmit bits
-        return w_tmp, w_tmp_residual
-
-    def _get_trans_indices(self, w_tmp):
-        raise NotImplementedError()  #TODO: What does this mean?
-
-class Top_k(Normal_Compression):
-    def __init__(self, node, ratio=1.0):
+class Top_k(Compression):
+    def __init__(self, node, avg_comm_cost, ratio=1.0):
         super().__init__(node)
         self.ratio = ratio
 
-    def _get_trans_indices(self, w_tmp):
+    def _get_trans_indices(self, iter, w_tmp):
         full_size = w_tmp.size()[0]
         bt_square = torch.square(w_tmp)
         bt_square_sorted, bt_sorted_indices = torch.sort(bt_square, descending=True)
+        trans_bits = int(self.ratio * full_size)
+        return bt_sorted_indices[:trans_bits], bt_sorted_indices[trans_bits:]
 
-        k = int(full_size * self.ratio)
-        if k > torch.count_nonzero(bt_square).item():
-            k = torch.count_nonzero(bt_square).item()
-        return bt_sorted_indices[:k], bt_sorted_indices[k:]
-
-class Rand_k(Normal_Compression):
-    def __init__(self, node, ratio=1.0):
+class Rand_k(Compression):
+    def __init__(self, node, avg_comm_cost, ratio=1.0):
         super().__init__(node)
         self.ratio = ratio
 
-    def _get_trans_indices(self, w_tmp):
+    def _get_trans_indices(self, iter, w_tmp):
         np.random.seed()
         full_size = w_tmp.size()[0]
         all_indices = np.arange(full_size, dtype=int)
