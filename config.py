@@ -28,11 +28,12 @@ parse.add_argument('-avg_comp', type=float, default=0.25, help='Average computat
 parse.add_argument('-seed', type=int, default=3, help='random seed for pseudo random model initial weights')
 parse.add_argument('-ns', type=int, default=2, help='Number of seeds for simulation')
 parse.add_argument('-ratio', type=float, default=0.1, help='the ratio of non-zero elements that the baseline want to transfer')
+parse.add_argument('-quan', type=int, default=8, help='Quantization bits')
 parse.add_argument('-algorithm', type=str, default='FlexDFL', help='machine learning algorithm')
 parse.add_argument('-dist', type=str, default='Dirichlet', help='Data Distribution Method')
 parse.add_argument('-alpha', type=str, default=0.5, help='Alpha value for Dirichlet Distribution')
 
-parse.add_argument('-consensus', type=float, default=0.01, help='Consensus step for CHOCO')
+parse.add_argument('-consensus', type=float, default=0.1, help='Consensus step for CHOCO')
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 args = parse.parse_args()
@@ -43,8 +44,10 @@ average_comp_cost = args.avg_comp
 V = args.V  # Lyapunov V value
 W = args.W  # Lyapunov initial queue length W
 LEARNING_RATE = args.lr
+
 RATIO = args.ratio
 CONSENSUS_STEP = args.consensus
+QUANTIZE_LEVEL = args.quan
 
 dataset_path = os.path.join(os.path.dirname(__file__), 'data')
 
