@@ -73,9 +73,8 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             client_accumulate.append(torch.zeros_like(model.get_weights()))
             client_residual.append(torch.zeros_like(model.get_weights()))
 
-            # client_compressor.append(Rand_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
-            # client_compressor.append(Top_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
-            client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
+            client_compressor.append(Top_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
+            # client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
 
             client_train_loader.append(DataLoader(client_data[n], batch_size=BATCH_SIZE, shuffle=True))
             client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
@@ -88,9 +87,17 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             print('SEED ', '|', seed, '|', 'ITERATION ', iter_num)
             Vector_Update = []
 
+            Averaged_accumulate = Transfer.Average_CHOCO(client_accumulate)
+            for n in range(CLIENTS):
+                client_weights[n] = client_tmp[n] + CONSENSUS_STEP_TMP * Averaged_accumulate[n]
+
             for n in range(CLIENTS):
                 Models[n].assign_weights(weights=client_weights[n])
                 Models[n].model.train()
+
+                Vector_update = client_weights[n] - client_accumulate[n]
+                Vector_update, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=Vector_update, w_residual=client_residual[n], iter=iter_num)  # Not work?
+                client_accumulate[n] += Vector_update
 
                 for local_iter in range(ROUND_ITER):
                     images, labels = next(iter(client_train_loader[n]))
@@ -105,26 +112,17 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                     Models[n].optimizer.step()
 
                 client_tmp[n] = Models[n].get_weights()
-                # Vector_update = Models[n].get_weights()
-                Vector_update = client_tmp[n] - client_accumulate[n]
-
-                Vector_update, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=Vector_update, w_residual=client_residual[n], iter=iter_num)  # Not work?
-
-                client_accumulate[n] += Vector_update
-                # Vector_Update.append(Vector_update)
-
-            Averaged_accumulate = Transfer.Average_CHOCO(client_accumulate)
-            # client_weights = Transfer.Average(Vector_Update)
-            for n in range(CLIENTS):
-                client_weights[n] = client_tmp[n] + CONSENSUS_STEP_TMP * Averaged_accumulate[n]
-                # client_weights[n] = client_weights[n]
 
             iter_num += 1
             if iter_num % 200 == 0:
-                if CONSENSUS_STEP_TMP == 0.1:
-                    CONSENSUS_STEP_TMP = CONSENSUS_STEP_TMP
-                else:
+                if CONSENSUS_STEP_TMP > 0.1:
                     CONSENSUS_STEP_TMP -= 0.1
+                else:
+                    CONSENSUS_STEP_TMP = CONSENSUS_STEP_TMP
+                    # if CONSENSUS_STEP_TMP - 0.05 <= 0:
+                    #     CONSENSUS_STEP_TMP -= 0.02
+                    # else:
+                    #     CONSENSUS_STEP_TMP = CONSENSUS_STEP_TMP
 
             # train_loss, train_acc = test_model.accuracy(weights=client_weights[0], test_loader=train_loader, device=device)
             # test_loss, test_acc = test_model.accuracy(weights=client_weights[0], test_loader=test_loader, device=device)
@@ -156,5 +154,5 @@ if __name__ == "__main__":  #TODO: Why use this sentence
     for item in txt_list:
         f.write("%s\n" % item)
 
-    # for repeat_time in range(3):
-    #     os.system('say "Program Finished."')
+    for repeat_time in range(1):
+        os.system('say "Program Finished."')

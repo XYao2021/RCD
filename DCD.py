@@ -71,7 +71,6 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             client_accumulate.append(torch.zeros_like(model.get_weights()))
             client_residual.append(torch.zeros_like(model.get_weights()))
 
-            # client_compressor.append(Rand_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
             # client_compressor.append(Top_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
             client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
 

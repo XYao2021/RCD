@@ -97,19 +97,30 @@ class Transform:
         Update_Avg = []
         for i in range(self.nodes):
             updates = torch.zeros_like(Update_Vector[0])
-            neighbor = np.setdiff1d(self.neighbors[i], i)
-            for j in neighbor:
-                updates += Update_Vector[j] - Update_Vector[i]
-            updates = torch.div(updates, torch.tensor(len(self.neighbors[i])))
+            # neighbor = np.setdiff1d(self.neighbors[i], i)
+            for j in self.neighbors[i]:
+                updates += self.factor * (Update_Vector[j] - Update_Vector[i])
             Update_Avg.append(updates)
         return Update_Avg
 
-    def Average_DCD(self, Update_Vector):
+    def Average_ECD(self, Update_Vector):
         Update_Avg = []
         for i in range(self.nodes):
             updates = torch.zeros_like(Update_Vector[0])
-            for j in range(len(self.neighbors[i])):
-                updates += (Update_Vector[self.neighbors[i][j]] - Update_Vector[i])
-            updates = torch.div(updates, torch.tensor(len(self.neighbors[0])))
+            neighbors = self.neighbors[i]
+            # neighbors = np.setdiff1d(self.neighbors[i], i)
+            for j in range(len(neighbors)):
+                updates += self.factor*Update_Vector[neighbors[j]]
+            # updates = torch.div(updates, torch.tensor(len(self.neighbors[0])))
             Update_Avg.append(updates)
         return Update_Avg
+
+    # def Average_DCD(self, Update_Vector):
+    #     Update_Avg = []
+    #     for i in range(self.nodes):
+    #         updates = torch.zeros_like(Update_Vector[0])
+    #         for j in range(len(self.neighbors[i])):
+    #             updates += (Update_Vector[self.neighbors[i][j]] - Update_Vector[i])
+    #         updates = torch.div(updates, torch.tensor(len(self.neighbors[0])))
+    #         Update_Avg.append(updates)
+    #     return Update_Avg

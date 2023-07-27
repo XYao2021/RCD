@@ -4,11 +4,11 @@ import os
 import torchvision.transforms as transforms
 from torchvision import datasets
 
-
 parse = argparse.ArgumentParser()
 parse.add_argument('-data', type=str, default='fashion', help='choose target dataset')  # Like CIFAR10, MNIST, FashionMNIST, CIFAR100
 parse.add_argument('-pretrained-model', type=str, default='', help='pretrain model path')
 parse.add_argument('-method', type=str, default='Lyapunov', help='model method')
+parse.add_argument('-num_iter', type=int, default=100, help='number of iterations')
 
 parse.add_argument('-agg', type=int, default=1000, help='Global Aggregation times/ total iterations')
 parse.add_argument('-iter_round', type=int, default=1, help='Local Training Times: Iterations')

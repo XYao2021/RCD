@@ -1,6 +1,6 @@
 import copy
 from abc import ABC
-
+import math
 import torch
 import numpy as np
 import abc
@@ -32,13 +32,21 @@ class Compression(abc.ABC):
         else:
             w_tmp += w_residual
 
-        trans_indices, not_trans_indices = self._get_trans_indices(iter, w_tmp)
+        trans_indices, not_trans_indices, trans_bits = self._get_trans_indices(iter, w_tmp)
 
         w_tmp_residual = copy.deepcopy(w_tmp)
         w_tmp[not_trans_indices] = 0  # transfer vector v_t, sparse vector
         w_tmp_residual -= w_tmp  # accumulate the residual for not transmit bits
 
-        E = torch.sum(torch.square(w_tmp_residual))
+        # if trans_bits == 0:
+        #     w_tmp_residual = w_tmp
+        # else:
+        #     quan_bits = np.ceil(math.log2(trans_bits))
+        #     scale = 2**quan_bits - 1
+        #     w_tmp_quantized = torch.round(w_tmp * scale) / scale
+        #     w_tmp_residual = w_tmp - w_tmp_quantized
+        #     w_tmp = w_tmp_quantized
+
         return w_tmp, w_tmp_residual
 
     def _get_trans_indices(self, iter, w_tmp):
@@ -77,7 +85,7 @@ class Lyapunov_compression(Compression):
             trans_bits = 0
         self.queue += communication_cost(self.node, iter, full_size, trans_bits) - self.avg_comm_cost
         self.queue = max(0.001, self.queue)  # Not allow to have the negative queues, set to very small one
-        return bt_sq_sort_indices[:trans_bits], bt_sq_sort_indices[trans_bits:]
+        return bt_sq_sort_indices[:trans_bits], bt_sq_sort_indices[trans_bits:], trans_bits
 
 class Fixed_Compression(Compression):
     def __init__(self, node, avg_comm_cost, ratio=1.0):
@@ -108,7 +116,7 @@ class Fixed_Compression(Compression):
             trans_bits = k
         else:
             trans_bits = 0
-        return bt_sorted_indices[:trans_bits], bt_sorted_indices[trans_bits:]
+        return bt_sorted_indices[:trans_bits], bt_sorted_indices[trans_bits:], trans_bits
 
 class Top_k(Compression):
     def __init__(self, node, avg_comm_cost, ratio=1.0):
@@ -120,21 +128,21 @@ class Top_k(Compression):
         bt_square = torch.square(w_tmp)
         bt_square_sorted, bt_sorted_indices = torch.sort(bt_square, descending=True)
         trans_bits = int(self.ratio * full_size)
-        return bt_sorted_indices[:trans_bits], bt_sorted_indices[trans_bits:]
+        return bt_sorted_indices[:trans_bits], bt_sorted_indices[trans_bits:], trans_bits
 
-class Rand_k(Compression):
-    def __init__(self, node, avg_comm_cost, ratio=1.0):
-        super().__init__(node)
-        self.ratio = ratio
-
-    def _get_trans_indices(self, iter, w_tmp):
-        np.random.seed()
-        full_size = w_tmp.size()[0]
-        all_indices = np.arange(full_size, dtype=int)
-        send_indices = np.random.choice(all_indices, int(full_size*self.ratio), replace=False)
-        # print(self.node, send_indices)
-        not_send_indices = np.setdiff1d(all_indices, send_indices)
-        return send_indices, not_send_indices
+# class Rand_k(Compression):
+#     def __init__(self, node, avg_comm_cost, ratio=1.0):
+#         super().__init__(node)
+#         self.ratio = ratio
+#
+#     def _get_trans_indices(self, iter, w_tmp):
+#         np.random.seed()
+#         full_size = w_tmp.size()[0]
+#         all_indices = np.arange(full_size, dtype=int)
+#         send_indices = np.random.choice(all_indices, int(full_size*self.ratio), replace=False)
+#         # print(self.node, send_indices)
+#         not_send_indices = np.setdiff1d(all_indices, send_indices)
+#         return send_indices, not_send_indices
 
 class Quantization(abc.ABC):
     def __init__(self, num_bits=4):
@@ -149,3 +157,23 @@ class Quantization(abc.ABC):
         w_tmp_quantized = torch.round(w_tmp * self.scale) / self.scale
         w_residual = w_tmp - w_tmp_quantized
         return w_tmp_quantized, w_residual
+
+class Lyapunov_compression_Q(Compression):
+    def __init__(self, node, avg_comm_cost, V, W):
+        super().__init__(node)
+        self.avg_comm_cost = avg_comm_cost
+        self.V = V
+        self.queue = W  # Initial queue length
+
+    def _get_trans_indices(self, iter, w_tmp):
+        # full_size = w_tmp.size()[0]
+        full_size = w_tmp.shape[0]
+        bt_square = torch.square(w_tmp)
+
+        no_transmit_penalty = self.V * torch.sum(bt_square) - self.queue * self.avg_comm_cost
+        for bits in [2, 4, 8, 16, 32]:
+            scale = 2 ** bits - 1
+            quantize = torch.round(w_tmp * scale) / scale
+        self.queue += communication_cost(self.node, iter, full_size, trans_bits) - self.avg_comm_cost
+        self.queue = max(0.001, self.queue)  # Not allow to have the negative queues, set to very small one
+        return bt_sq_sort_indices[:trans_bits], bt_sq_sort_indices[trans_bits:], trans_bits

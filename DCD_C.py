@@ -47,14 +47,12 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         client_accumulate = []
         client_tmp = []
         client_partition = []
-        client_est = []
 
         global_loss = []
         Test_acc = []
 
-        TMP_LEARNING_RATE = LEARNING_RATE
         Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='random')
-        test_model = Model(random_seed=seed, learning_rate=TMP_LEARNING_RATE, model_name=model_name, device=device, flatten_weight=True, pretrained_model_file=load_model_file)
+        test_model = Model(random_seed=seed, learning_rate=LEARNING_RATE, model_name=model_name, device=device, flatten_weight=True, pretrained_model_file=load_model_file)
         print(Transfer.neighbors)
         print(Transfer.factor)
 
@@ -65,59 +63,67 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             print('Transfer Matrix is Symmetric Matrix')
 
         for n in range(CLIENTS):
-            model = Model(random_seed=seed, learning_rate=TMP_LEARNING_RATE, model_name=model_name, device=device,
+            model = Model(random_seed=seed, learning_rate=LEARNING_RATE, model_name=model_name, device=device,
                           flatten_weight=True, pretrained_model_file=load_model_file)
             Models.append(model)
             client_tmp.append(model.get_weights())
             client_weights.append(model.get_weights())
-            client_est.append(model.get_weights())
-
+            client_accumulate.append(torch.zeros_like(model.get_weights()))
             client_residual.append(torch.zeros_like(model.get_weights()))
 
+            if METHOD == 'Lyapunov':
+                client_compressor.append(Lyapunov_compression(node=n, avg_comm_cost=average_comm_cost, V=V, W=W))
+                client_partition.append(Lyapunov_Participation(node=n, average_comp_cost=average_comp_cost, V=V, W=W))
+            elif METHOD == 'Fixed':
+                client_compressor.append(Fixed_Compression(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
+                client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
+            # client_compressor.append(Rand_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
             # client_compressor.append(Top_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
-            client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
+            # client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
 
             client_train_loader.append(DataLoader(client_data[n], batch_size=BATCH_SIZE, shuffle=True))
+            # participation = np.random.choice(np.arange(AGGREGATION), 583)
+            # client_partition.append(participation)
             # client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
 
-        iter_num = 1
+        iter_num = 0
         update_times = 0
         # CHOCO Algorithm
         while True:  # TODO: What is the difference with for loop over clients
             print('SEED ', '|', seed, '|', 'ITERATION ', iter_num)
-            Averaged_weights = Transfer.Average_ECD(client_est)
+            Vector_Update = []
+            Averaged_weights = Transfer.Average(client_weights)
 
             for n in range(CLIENTS):
                 Models[n].assign_weights(weights=client_weights[n])
                 Models[n].model.train()
 
-                for local_iter in range(ROUND_ITER):
-                    images, labels = next(iter(client_train_loader[n]))
-                    images, labels = images.to(device), labels.to(device)
-                    if data_transform is not None:
-                        images = data_transform(images)
+                # if iter_num in client_partition[n]:
+                qt = client_partition[n].get_q(iter_num)
+                if np.random.binomial(1, qt) == 1:
+                    for local_iter in range(ROUND_ITER):
+                        images, labels = next(iter(client_train_loader[n]))
+                        images, labels = images.to(device), labels.to(device)
+                        if data_transform is not None:
+                            images = data_transform(images)
 
-                    Models[n].optimizer.zero_grad()
-                    pred = Models[n].model(images)
-                    loss = Models[n].loss_function(pred, labels)
-                    loss.backward()
-                    Models[n].optimizer.step()
+                        Models[n].optimizer.zero_grad()
+                        pred = Models[n].model(images)
+                        loss = Models[n].loss_function(pred, labels)
+                        loss.backward()
+                        Models[n].optimizer.step()
 
-                Vector_update = Models[n].get_weights()
+                    Vector_update = Models[n].get_weights()
+                    Vector_update -= client_weights[n]
+                    Vector_update += Averaged_weights[n]
+
+                else:
+                    Vector_update = Averaged_weights[n]
+
                 Vector_update -= client_weights[n]
-                Vector_update += Averaged_weights[n]
+                Vector_update, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=Vector_update, w_residual=client_residual[n], iter=iter_num)  # Not work?
 
-                z_vector = (1 - 0.5 * iter_num) * client_weights[n] + 0.5 * iter_num * Vector_update
-                client_weights[n] = Vector_update
-
-                z_vector, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=z_vector, w_residual=client_residual[n], iter=iter_num)  # Not work?
-                client_est[n] = (1 - 2/iter_num) * client_est[n] + 2/iter_num * z_vector
-
-                # if iter_num % 400:
-                #     if Models[n].learning_rate > 0.01:
-                #         Models[n].learning_rate /= 2
-                #     else:
-                #         Models[n].learning_rate = Models[n].learning_rate
+                client_weights[n] += Vector_update
 
             iter_num += 1
 
@@ -133,7 +139,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             print('SEED |', seed, '| iteration |', iter_num, '| Global Loss', train_loss, '| Training Accuracy |',
                   train_acc, '| Test Accuracy |', test_acc)
 
-            if iter_num >= AGGREGATION + 1:
+            if iter_num >= AGGREGATION:
                 ACC += Test_acc
                 LOSS += global_loss
 
@@ -146,10 +152,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
 
     txt_list = [ACC, '\n', LOSS]
 
-    f = open('ECD|{}|{}|{}|{}.txt'.format(RATIO, ROUND_ITER, AGGREGATION, time.strftime("%H:%M:%S", time.localtime())), 'w')
+    f = open('DCD|{}|{}|{}|{}.txt'.format(RATIO, ROUND_ITER, AGGREGATION, time.strftime("%H:%M:%S", time.localtime())), 'w')
 
     for item in txt_list:
         f.write("%s\n" % item)
-
-    # for repeat_time in range(2):
-    #     os.system('say "Program Finished."')
