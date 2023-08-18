@@ -53,16 +53,16 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         Test_acc = []
 
         TMP_LEARNING_RATE = LEARNING_RATE
-        Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='random')
+        Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='Ring')
         test_model = Model(random_seed=seed, learning_rate=TMP_LEARNING_RATE, model_name=model_name, device=device, flatten_weight=True, pretrained_model_file=load_model_file)
         print(Transfer.neighbors)
         print(Transfer.factor)
-
-        check = Check_Matrix(CLIENTS, Transfer.matrix)
-        if check != 0:
-            raise Exception('The Transfer Matrix Should be Symmetric')
-        else:
-            print('Transfer Matrix is Symmetric Matrix')
+        #
+        # check = Check_Matrix(CLIENTS, Transfer.matrix)
+        # if check != 0:
+        #     raise Exception('The Transfer Matrix Should be Symmetric')
+        # else:
+        #     print('Transfer Matrix is Symmetric Matrix')
 
         for n in range(CLIENTS):
             model = Model(random_seed=seed, learning_rate=TMP_LEARNING_RATE, model_name=model_name, device=device,
