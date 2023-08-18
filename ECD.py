@@ -110,7 +110,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                 z_vector = (1 - 0.5 * iter_num) * client_weights[n] + 0.5 * iter_num * Vector_update
                 client_weights[n] = Vector_update
 
-                z_vector, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=z_vector, w_residual=client_residual[n], iter=iter_num)  # Not work?
+                z_vector, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=z_vector, w_residual=client_residual[n], iter=iter_num, device=device)  # Not work?
                 client_est[n] = (1 - 2/iter_num) * client_est[n] + 2/iter_num * z_vector
 
                 # if iter_num % 400:

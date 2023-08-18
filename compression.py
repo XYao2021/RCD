@@ -199,7 +199,7 @@ class Quantization(abc.ABC):
         self.num_bits = num_bits
         self.scale = 2**self.num_bits - 1
 
-    def get_trans_bits_and_residual(self, iter, w_tmp, w_residual):
+    def get_trans_bits_and_residual(self, iter, w_tmp, w_residual, device):
         if w_tmp is None:
             w_tmp = w_residual  # w_residual is e_t
         else:
@@ -215,7 +215,8 @@ class Quantization(abc.ABC):
             value = value + step
             centroids.append(value)
 
-        distances = torch.cdist(torch.reshape(w_tmp, (-1, 1)), torch.reshape(torch.tensor(centroids), (-1, 1)))
+        centroids = torch.tensor(centroids).to(device)
+        distances = torch.cdist(torch.reshape(w_tmp, (-1, 1)), torch.reshape(centroids, (-1, 1)))
         assignments = torch.argmin(distances, dim=1)
         # w_tmp = torch.reshape(w_tmp, (-1, 1))
         #
