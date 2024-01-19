@@ -98,7 +98,9 @@ class Sampling:
             for i in range(self.num_class):
                 class_samples = num_samples[client][i]
                 tmp_data = random.sample(self.dataset[i], k=class_samples)
+                # tmp_data_1 = random.sample(self.dataset[i], k=class_samples)
                 Sample_data[client] += tmp_data
+                # Sample_data[client] += tmp_data_1
             np.random.shuffle(Sample_data[client])
         return Sample_data
 
