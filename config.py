@@ -31,9 +31,9 @@ parse.add_argument('-ratio', type=float, default=0.1, help='the ratio of non-zer
 parse.add_argument('-quan', type=int, default=8, help='Quantization bits')
 parse.add_argument('-algorithm', type=str, default='FlexDFL', help='machine learning algorithm')
 parse.add_argument('-dist', type=str, default='Dirichlet', help='Data Distribution Method')
-parse.add_argument('-alpha', type=str, default=0.5, help='Alpha value for Dirichlet Distribution')
+parse.add_argument('-alpha', type=float, default=0.1, help='Alpha value for Dirichlet Distribution')
 
-parse.add_argument('-consensus', type=float, default=0.1, help='Consensus step for CHOCO')
+parse.add_argument('-consensus', type=float, default=0.2, help='Consensus step for CHOCO')
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 args = parse.parse_args()

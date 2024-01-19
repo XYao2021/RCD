@@ -20,6 +20,8 @@ if device != 'cpu':
 if __name__ == "__main__":  #TODO: Why use this sentence
     ACC = []
     LOSS = []
+    NON_ZERO = []
+
     for seed in Seed_set:
         random.seed(seed)
         np.random.seed(seed)
@@ -33,7 +35,10 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         #TODO: Change the sampling and splitting method to class to accelerate the set-up process
         Sample = Sampling(num_client=CLIENTS, num_class=len(train_data.classes), train_data=train_data, method='uniform', seed=seed)
         if DISTRIBUTION == 'Dirichlet':
-            client_data = Sample.Synthesize_sampling(alpha=ALPHA)
+            if ALPHA == 0:
+                client_data = Sample.DL_sampling_single()
+            elif ALPHA > 0:
+                client_data = Sample.Synthesize_sampling(alpha=ALPHA)
         elif DISTRIBUTION == 'Single':
             client_data = Sample.DL_sampling_single()
         else:
@@ -52,16 +57,25 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         global_loss = []
         Test_acc = []
 
-        Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='random')
+        Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='Ring')
+        # Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='Random')
         test_model = Model(random_seed=seed, learning_rate=LEARNING_RATE, model_name=model_name, device=device, flatten_weight=True, pretrained_model_file=load_model_file)
         print(Transfer.neighbors)
         print(Transfer.factor)
 
-        check = Check_Matrix(CLIENTS, Transfer.matrix)
-        if check != 0:
-            raise Exception('The Transfer Matrix Should be Symmetric')
-        else:
-            print('Transfer Matrix is Symmetric Matrix')
+        # check = Check_Matrix(CLIENTS, Transfer.matrix)
+        # if check != 0:
+        #     raise Exception('The Transfer Matrix Should be Symmetric')
+        # else:
+        #     print('Transfer Matrix is Symmetric Matrix')
+        # max_value = 34.90439
+        # min_value = -24.813738
+
+        # max_value = 94.066895
+        # min_value = -95.25409
+
+        max_value = 66.03526
+        min_value = -57.940025
 
         for n in range(CLIENTS):
             model = Model(random_seed=seed, learning_rate=LEARNING_RATE, model_name=model_name, device=device,
@@ -74,15 +88,12 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             client_residual.append(torch.zeros_like(model.get_weights()))
 
             if METHOD == 'Lyapunov':
-                client_compressor.append(Lyapunov_compression(node=n, avg_comm_cost=average_comm_cost, V=V, W=W))
-                client_partition.append(Lyapunov_Participation(node=n, average_comp_cost=average_comp_cost, V=V, W=W))
+                # client_compressor.append(Lyapunov_compression_1(node=n, avg_comm_cost=average_comm_cost, V=V, W=W))
+                client_compressor.append(Lyapunov_compression_Q(node=n, avg_comm_cost=average_comm_cost, V=V, W=W, max_value=max_value, min_value=min_value))
+                client_partition.append(Lyapunov_Participation(node=n, average_comp_cost=average_comp_cost, V=V, W=W, seed=seed))
             elif METHOD == 'Fixed':
                 client_compressor.append(Fixed_Compression(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
                 client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
-
-            # client_compressor.append(Rand_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
-            # client_compressor.append(Top_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
-            # client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
 
             client_train_loader.append(DataLoader(client_data[n], batch_size=BATCH_SIZE, shuffle=True))
             # participation = np.random.choice(np.arange(AGGREGATION), 583)
@@ -95,13 +106,14 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         while True:  # TODO: What is the difference with for loop over clients
             print('SEED ', '|', seed, '|', 'ITERATION ', iter_num)
             Averaged_weights = Transfer.Average(client_est)
+            non_zero = []
 
             for n in range(CLIENTS):
                 Models[n].assign_weights(weights=client_weights[n])
                 Models[n].model.train()
 
                 # if (iter_num - 1) in client_partition[n]:
-                qt = client_partition[n].get_q(iter_num)
+                qt = client_partition[n].get_q(iter_num-1)
                 if np.random.binomial(1, qt) == 1:
                     for local_iter in range(ROUND_ITER):
                         images, labels = next(iter(client_train_loader[n]))
@@ -122,13 +134,17 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                 else:
                     Vector_update = Averaged_weights[n]
 
-                client_weights[n] = Vector_update
+                # gamma_t = [0]
                 z_vector = (1 - 0.5 * iter_num) * client_weights[n] + 0.5 * iter_num * Vector_update
-                z_vector, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=z_vector, w_residual=client_residual[n], iter=iter_num)  # Not work?
+                z_vector, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=z_vector, w_residual=client_residual[n], iter=iter_num-1, device=device, channel_quality=None)  # Not work?
+                # non_zero.append(torch.count_nonzero(z_vector)/len(z_vector))
 
-                client_est[n] = (1 - 2 / iter_num) * client_weights[n] + 2 / iter_num * z_vector
+                client_est[n] = (1 - 2 / iter_num) * client_est[n] + 2 / iter_num * z_vector
+                client_weights[n] = Vector_update
 
             iter_num += 1
+            # NON_ZERO.append(sum(non_zero)/len(non_zero))
+            # print(iter_num, non_zero, '\n')
 
             # train_loss, train_acc = test_model.accuracy(weights=client_weights[0], test_loader=train_loader, device=device)
             # test_loss, test_acc = test_model.accuracy(weights=client_weights[0], test_loader=test_loader, device=device)
@@ -154,6 +170,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         torch.cuda.empty_cache()  # Clean the memory cache
 
     txt_list = [ACC, '\n', LOSS]
+    # print(NON_ZERO)
 
     f = open('ECD|{}|{}|{}|{}.txt'.format(RATIO, ROUND_ITER, AGGREGATION, time.strftime("%H:%M:%S", time.localtime())), 'w')
 

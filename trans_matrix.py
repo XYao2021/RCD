@@ -11,6 +11,7 @@ class Transform:
         self.network = network
         self.matrix = []
         self.factor = 0
+        self.add_trans = []
 
         if seed is not None:
             np.random.seed(seed)
@@ -23,6 +24,7 @@ class Transform:
             self._Cyclic_network()
         else:
             self.generate_symmetric_matrix()
+        self.Add_trans()
 
     def _Cyclic_network(self):  # TODO: Change the neighbors algorithm
         # clients = np.arange(self.nodes, dtype=int)
@@ -54,9 +56,18 @@ class Transform:
         self.factor = 1 / len(self.neighbors[0])
 
     def _Ring_network(self):
+        nodes = self.nodes
+
+        matrix = np.ones((nodes,), dtype=int)
+        conn_matrix = np.diag(matrix)
         for i in range(self.nodes):
-            self.neighbors.append([(i-1) % self.nodes, i, (i+1) % self.nodes])
+            connected = [(i-1) % self.nodes, i, (i+1) % self.nodes]
+            for j in connected:
+                conn_matrix[i][j] = 1
+                conn_matrix.transpose()[i][j] = 1
+            self.neighbors.append(connected)
         self.factor = 1 / len(self.neighbors[0])
+        self.matrix = conn_matrix
 
     def generate_symmetric_matrix(self):
         upper = int(self.nodes / 2) - 2
@@ -94,6 +105,7 @@ class Transform:
     def random_ring_network(self):
         nodes = self.nodes
         num_neighbor = 2
+        self.num_neighbor = num_neighbor
 
         matrix = np.ones((nodes,), dtype=int)
         conn_matrix = np.diag(matrix)
@@ -143,6 +155,26 @@ class Transform:
         self.neighbors = neighbors
         self.factor = 1 / len(self.neighbors[0])
 
+    def Add_trans(self):
+        conn_neighbor = []
+        for i in range(self.nodes):
+            connected = np.setdiff1d(self.neighbors[i], i)
+            conn_neighbor.append(connected)
+
+        Add_trans = []
+        for i in range(self.nodes):
+            neighbor = conn_neighbor[i]
+            add_trans = []
+            for j in range(self.num_neighbor):
+                remain = np.setdiff1d(conn_neighbor[conn_neighbor[i][j]], i)
+                need_trans = []
+                for k in range(len(remain)):
+                    if i not in conn_neighbor[remain[k]]:
+                        need_trans.append(remain[k])
+                add_trans.append(need_trans)
+            Add_trans.append(add_trans)
+        self.add_trans = Add_trans
+
     def Average(self, Update_Vector):
         Update_Avg = []
         for i in range(self.nodes):
@@ -150,11 +182,6 @@ class Transform:
             for j in range(len(self.neighbors[i])):
                 updates += self.factor * Update_Vector[self.neighbors[i][j]]
             Update_Avg.append(updates)
-            # for j in self.neighbors[i]:
-            #     # updates += self.factor * Update_Vector[j]
-            #     updates += self.factor * (Update_Vector[j] - Update_Vector[i])
-            # # updates = torch.div(updates, torch.tensor(len(self.neighbors[0])))
-            # Update_Avg.append(updates)
         return Update_Avg
 
     def Average_CHOCO(self, Update_Vector):

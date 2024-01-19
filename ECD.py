@@ -33,7 +33,10 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         #TODO: Change the sampling and splitting method to class to accelerate the set-up process
         Sample = Sampling(num_client=CLIENTS, num_class=len(train_data.classes), train_data=train_data, method='uniform', seed=seed)
         if DISTRIBUTION == 'Dirichlet':
-            client_data = Sample.Synthesize_sampling(alpha=ALPHA)
+            if ALPHA == 0:
+                client_data = Sample.DL_sampling_single()
+            elif ALPHA > 0:
+                client_data = Sample.Synthesize_sampling(alpha=ALPHA)
         elif DISTRIBUTION == 'Single':
             client_data = Sample.DL_sampling_single()
         else:
@@ -54,6 +57,8 @@ if __name__ == "__main__":  #TODO: Why use this sentence
 
         TMP_LEARNING_RATE = LEARNING_RATE
         Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='Ring')
+        # Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='random')
+
         test_model = Model(random_seed=seed, learning_rate=TMP_LEARNING_RATE, model_name=model_name, device=device, flatten_weight=True, pretrained_model_file=load_model_file)
         print(Transfer.neighbors)
         print(Transfer.factor)
@@ -63,6 +68,21 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         #     raise Exception('The Transfer Matrix Should be Symmetric')
         # else:
         #     print('Transfer Matrix is Symmetric Matrix')
+        "using mean value of all max/min values"
+        # max_value = 3.6763039586037496
+        # min_value = -3.4725098398225
+        "using mean value of top-20 max/min values"
+        # max_value = 17.6002401753125
+        # min_value = -16.843656876875002
+
+        # max_value = 34.90439
+        # min_value = -24.813738
+
+        # max_value = 94.066895
+        # min_value = -95.25409
+
+        max_value = 66.03526
+        min_value = -57.940025
 
         for n in range(CLIENTS):
             model = Model(random_seed=seed, learning_rate=TMP_LEARNING_RATE, model_name=model_name, device=device,
@@ -75,7 +95,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             client_residual.append(torch.zeros_like(model.get_weights()))
 
             # client_compressor.append(Top_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
-            client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
+            client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL, max_value=max_value, min_value=min_value))
 
             client_train_loader.append(DataLoader(client_data[n], batch_size=BATCH_SIZE, shuffle=True))
             # client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
@@ -85,7 +105,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         # CHOCO Algorithm
         while True:  # TODO: What is the difference with for loop over clients
             print('SEED ', '|', seed, '|', 'ITERATION ', iter_num)
-            Averaged_weights = Transfer.Average_ECD(client_est)
+            Averaged_weights = Transfer.Average(client_est)
 
             for n in range(CLIENTS):
                 Models[n].assign_weights(weights=client_weights[n])
@@ -108,16 +128,10 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                 Vector_update += Averaged_weights[n]
 
                 z_vector = (1 - 0.5 * iter_num) * client_weights[n] + 0.5 * iter_num * Vector_update
-                client_weights[n] = Vector_update
+                z_vector, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=z_vector, w_residual=client_residual[n], iter=iter_num, device=device, channel_quality=None)  # Not work?
 
-                z_vector, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=z_vector, w_residual=client_residual[n], iter=iter_num, device=device)  # Not work?
                 client_est[n] = (1 - 2/iter_num) * client_est[n] + 2/iter_num * z_vector
-
-                # if iter_num % 400:
-                #     if Models[n].learning_rate > 0.01:
-                #         Models[n].learning_rate /= 2
-                #     else:
-                #         Models[n].learning_rate = Models[n].learning_rate
+                client_weights[n] = Vector_update
 
             iter_num += 1
 
@@ -144,6 +158,11 @@ if __name__ == "__main__":  #TODO: Why use this sentence
 
         torch.cuda.empty_cache()  # Clean the memory cache
 
+    # max_value = [np.max(np.array(client_compressor[i].max)) for i in range(len(client_compressor))]
+    # min_value = [np.min(np.array(client_compressor[i].min)) for i in range(len(client_compressor))]
+    #
+    # txt_list = [max_value, '\n', min_value]
+    #
     txt_list = [ACC, '\n', LOSS]
 
     f = open('ECD|{}|{}|{}|{}.txt'.format(RATIO, ROUND_ITER, AGGREGATION, time.strftime("%H:%M:%S", time.localtime())), 'w')

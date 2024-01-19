@@ -33,7 +33,10 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         #TODO: Change the sampling and splitting method to class to accelerate the set-up process
         Sample = Sampling(num_client=CLIENTS, num_class=len(train_data.classes), train_data=train_data, method='uniform', seed=seed)
         if DISTRIBUTION == 'Dirichlet':
-            client_data = Sample.Synthesize_sampling(alpha=ALPHA)
+            if ALPHA == 0:
+                client_data = Sample.DL_sampling_single()
+            elif ALPHA > 0:
+                client_data = Sample.Synthesize_sampling(alpha=ALPHA)
         elif DISTRIBUTION == 'Single':
             client_data = Sample.DL_sampling_single()
         else:
@@ -47,42 +50,57 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         client_accumulate = []
         client_tmp = []
         client_partition = []
+        client_est = []
 
         global_loss = []
         Test_acc = []
 
-        Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='random')
-        test_model = Model(random_seed=seed, learning_rate=LEARNING_RATE, model_name=model_name, device=device, flatten_weight=True, pretrained_model_file=load_model_file)
+        TMP_LEARNING_RATE = LEARNING_RATE
+        Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='Ring')
+        # Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='random')
+
+        test_model = Model(random_seed=seed, learning_rate=TMP_LEARNING_RATE, model_name=model_name, device=device, flatten_weight=True, pretrained_model_file=load_model_file)
         print(Transfer.neighbors)
         print(Transfer.factor)
+        #
+        # check = Check_Matrix(CLIENTS, Transfer.matrix)
+        # if check != 0:
+        #     raise Exception('The Transfer Matrix Should be Symmetric')
+        # else:
+        #     print('Transfer Matrix is Symmetric Matrix')
+        # max_value = 0.0272826802225
+        # min_value = -0.026917937865
 
-        check = Check_Matrix(CLIENTS, Transfer.matrix)
-        if check != 0:
-            raise Exception('The Transfer Matrix Should be Symmetric')
-        else:
-            print('Transfer Matrix is Symmetric Matrix')
+        # max_value = 0.10260915925
+        # min_value = -0.096225545125
+
+        # max_value = 0.29974118
+        # min_value = -0.30779636
+
+        max_value = 0.35543507
+        min_value = -0.30671167
 
         for n in range(CLIENTS):
-            model = Model(random_seed=seed, learning_rate=LEARNING_RATE, model_name=model_name, device=device,
+            model = Model(random_seed=seed, learning_rate=TMP_LEARNING_RATE, model_name=model_name, device=device,
                           flatten_weight=True, pretrained_model_file=load_model_file)
             Models.append(model)
             client_tmp.append(model.get_weights())
             client_weights.append(model.get_weights())
-            client_accumulate.append(torch.zeros_like(model.get_weights()))
+            client_est.append(model.get_weights())
+
             client_residual.append(torch.zeros_like(model.get_weights()))
 
             # client_compressor.append(Top_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
-            client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
+            client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL, max_value=max_value, min_value=min_value))
 
             client_train_loader.append(DataLoader(client_data[n], batch_size=BATCH_SIZE, shuffle=True))
-            client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
+            # client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
 
-        iter_num = 0
+        iter_num = 1
         update_times = 0
         # CHOCO Algorithm
         while True:  # TODO: What is the difference with for loop over clients
             print('SEED ', '|', seed, '|', 'ITERATION ', iter_num)
-            Vector_Update = []
             Averaged_weights = Transfer.Average(client_weights)
 
             for n in range(CLIENTS):
@@ -102,11 +120,11 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                     Models[n].optimizer.step()
 
                 Vector_update = Models[n].get_weights()
-                Vector_update -= client_weights[n]
+                Vector_update -= client_weights[n]  # gradient
                 Vector_update += Averaged_weights[n]
-                Vector_update -= client_weights[n]
 
-                Vector_update, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=Vector_update, w_residual=client_residual[n], iter=iter_num)  # Not work?
+                Vector_update -= client_weights[n]
+                Vector_update, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=Vector_update, w_residual=client_residual[n], iter=iter_num, device=device, channel_quality=None)  # Not work?
 
                 client_weights[n] += Vector_update
 
@@ -124,7 +142,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             print('SEED |', seed, '| iteration |', iter_num, '| Global Loss', train_loss, '| Training Accuracy |',
                   train_acc, '| Test Accuracy |', test_acc)
 
-            if iter_num >= AGGREGATION:
+            if iter_num >= AGGREGATION + 1:
                 ACC += Test_acc
                 LOSS += global_loss
 
@@ -135,9 +153,18 @@ if __name__ == "__main__":  #TODO: Why use this sentence
 
         torch.cuda.empty_cache()  # Clean the memory cache
 
+    # max_value = [np.max(np.array(client_compressor[i].max)) for i in range(len(client_compressor))]
+    # min_value = [np.min(np.array(client_compressor[i].min)) for i in range(len(client_compressor))]
+    #
+    # txt_list = [max_value, '\n', min_value]
+    #
     txt_list = [ACC, '\n', LOSS]
 
     f = open('DCD|{}|{}|{}|{}.txt'.format(RATIO, ROUND_ITER, AGGREGATION, time.strftime("%H:%M:%S", time.localtime())), 'w')
 
     for item in txt_list:
         f.write("%s\n" % item)
+
+    # for repeat_time in range(2):
+    #     os.system('say "Program Finished."')
+

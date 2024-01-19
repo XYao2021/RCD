@@ -3,20 +3,21 @@ from numpy.random import MT19937
 from numpy.random import RandomState, SeedSequence
 
 
-def get_alpha(node, iter):
+def get_alpha(node, iter, seed):
     random_variable = RandomState(MT19937(SeedSequence(iter * 1000 + node)))
     return random_variable.random()  # Get the random number between 0 and 1, have plenty other random number generate options
 
 class Lyapunov_Participation:
-    def __init__(self, node, average_comp_cost, V, W):
+    def __init__(self, node, average_comp_cost, V, W, seed):
         super().__init__()
+        self.seed = seed
         self.node = node
         self.avg_comp_cost = average_comp_cost
         self.V = V
         self.queue = W
 
     def get_q(self, iter):
-        alpha = get_alpha(self.node, iter)
+        alpha = get_alpha(self.node, iter, self.seed)
         if self.queue * alpha > 0:
             # print(np.sqrt(self.V), np.sqrt(self.queue * alpha), alpha)
             q_opt = min(1.0, np.sqrt(self.V) / np.sqrt(self.queue * alpha))

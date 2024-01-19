@@ -35,7 +35,10 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         #TODO: Change the sampling and splitting method to class to accelerate the set-up process
         Sample = Sampling(num_client=CLIENTS, num_class=len(train_data.classes), train_data=train_data, method='uniform', seed=seed)
         if DISTRIBUTION == 'Dirichlet':
-            client_data = Sample.Synthesize_sampling(alpha=ALPHA)
+            if ALPHA == 0:
+                client_data = Sample.DL_sampling_single()
+            elif ALPHA > 0:
+                client_data = Sample.Synthesize_sampling(alpha=ALPHA)
         elif DISTRIBUTION == 'Single':
             client_data = Sample.DL_sampling_single()
         else:
@@ -53,16 +56,22 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         global_loss = []
         Test_acc = []
 
-        Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='random')
+        Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='Ring')
+        # Transfer = Transform(num_nodes=CLIENTS, num_neighbors=NEIGHBORS, seed=seed, network='Random')
         test_model = Model(random_seed=seed, learning_rate=LEARNING_RATE, model_name=model_name, device=device, flatten_weight=True, pretrained_model_file=load_model_file)
         print(Transfer.neighbors)
         print(Transfer.factor)
 
-        check = Check_Matrix(CLIENTS, Transfer.matrix)
-        if check != 0:
-            raise Exception('The Transfer Matrix Should be Symmetric')
-        else:
-            print('Transfer Matrix is Symmetric Matrix')
+        # check = Check_Matrix(CLIENTS, Transfer.matrix)
+        # if check != 0:
+        #     raise Exception('The Transfer Matrix Should be Symmetric')
+        # else:
+        #     print('Transfer Matrix is Symmetric Matrix')
+        # max_value = 0.22659664
+        # min_value = -0.21736327
+
+        max_value = 0.30123514
+        min_value = -0.21583036
 
         for n in range(CLIENTS):
             model = Model(random_seed=seed, learning_rate=LEARNING_RATE, model_name=model_name, device=device,
@@ -74,14 +83,12 @@ if __name__ == "__main__":  #TODO: Why use this sentence
             client_residual.append(torch.zeros_like(model.get_weights()))
 
             if METHOD == 'Lyapunov':
-                client_compressor.append(Lyapunov_compression(node=n, avg_comm_cost=average_comm_cost, V=V, W=W))
-                client_partition.append(Lyapunov_Participation(node=n, average_comp_cost=average_comp_cost, V=V, W=W))
+                # client_compressor.append(Lyapunov_compression_1(node=n, avg_comm_cost=average_comm_cost, V=V, W=W))
+                client_compressor.append(Lyapunov_compression_Q(node=n, avg_comm_cost=average_comm_cost, V=V, W=W, max_value=max_value, min_value=min_value))
+                client_partition.append(Lyapunov_Participation(node=n, average_comp_cost=average_comp_cost, V=V, W=W, seed=seed))
             elif METHOD == 'Fixed':
                 client_compressor.append(Fixed_Compression(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
                 client_partition.append(Fixed_Participation(average_comp_cost=average_comp_cost))
-
-            # client_compressor.append(Top_k(node=n, avg_comm_cost=average_comm_cost, ratio=RATIO))
-            # client_compressor.append(Quantization(num_bits=QUANTIZE_LEVEL))
 
             client_train_loader.append(DataLoader(client_data[n], batch_size=BATCH_SIZE, shuffle=True))
             # participation = np.random.choice(np.arange(AGGREGATION), 583)
@@ -91,6 +98,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
         iter_num = 0
         update_times = 0
         CONSENSUS_STEP_TMP = CONSENSUS_STEP
+        print(seed, CONSENSUS_STEP_TMP)
         # CHOCO Algorithm
         while True:  # TODO: What is the difference with for loop over clients
             print('SEED ', '|', seed, '|', 'ITERATION ', iter_num)
@@ -103,7 +111,7 @@ if __name__ == "__main__":  #TODO: Why use this sentence
                 Models[n].model.train()
 
                 Vector_update = client_weights[n] - client_accumulate[n]
-                Vector_update, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=Vector_update, w_residual=client_residual[n], iter=iter_num)  # Not work?
+                Vector_update, _ = client_compressor[n].get_trans_bits_and_residual(w_tmp=Vector_update, w_residual=client_residual[n], iter=iter_num, device=device, channel_quality=None)  # Not work?
                 client_accumulate[n] += Vector_update
 
                 qt = client_partition[n].get_q(iter_num)
@@ -126,8 +134,8 @@ if __name__ == "__main__":  #TODO: Why use this sentence
 
             iter_num += 1
             if iter_num % 200 == 0:
-                if CONSENSUS_STEP_TMP >= 0.1:
-                    CONSENSUS_STEP_TMP -= 0.1
+                if CONSENSUS_STEP_TMP > 0.05:
+                    CONSENSUS_STEP_TMP -= 0.05
                 else:
                     CONSENSUS_STEP_TMP = CONSENSUS_STEP_TMP
                     # if CONSENSUS_STEP_TMP - 0.05 <= 0:
