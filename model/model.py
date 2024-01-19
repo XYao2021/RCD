@@ -28,8 +28,9 @@ class Model:
             from model.MNISTModel import MNISTModel
             self.model = MNISTModel().to(device)
         elif model_name == 'CIFAR10Model':
-            from model.CIFAR10Model import CIFAR10Model
-            self.model = CIFAR10Model().to(device)
+            from model.CIFAR10Model import CIFAR10Model, ResNet18
+            # self.model = CIFAR10Model().to(device)
+            self.model = ResNet18().to(device)
 
         if pretrained_model_file is not None:
             self.model.load_state_dict(torch.load(pretrained_model_file, map_location=device))
@@ -42,10 +43,11 @@ class Model:
     def _get_weight_info(self):
         weights = self.model.state_dict()
         for key, weight in weights.items():
-            shape = list(weight.size())
-            self.key_list.append(key)
-            self.shape_list.append(shape)
-            self.size_list.append(list(weight.reshape((-1, )).size())[0])
+            if key.split('.')[-1] == 'weight' or key.split('.')[-1] == 'bias':
+                shape = list(weight.size())
+                self.key_list.append(key)
+                self.shape_list.append(shape)
+                self.size_list.append(list(weight.reshape((-1, )).size())[0])
 
     def get_weights(self):
         with torch.no_grad():
@@ -62,6 +64,7 @@ class Model:
 
     def assign_flatten_weights(self, weights):
         weights_dict = collections.OrderedDict()
+        # print(len(weights), sum(self.size_list), self.shape_list, self.size_list, self.key_list)
         new_weights = torch.split(weights, self.size_list)
         for i in range(len(self.shape_list)):
             weights_dict[self.key_list[i]] = new_weights[i].reshape(self.shape_list[i])
